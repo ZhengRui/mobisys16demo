@@ -35,17 +35,13 @@ class RequestHandler(SS.BaseRequestHandler):
         print "tcp request received, create client ", self.name
 
         # TODO: receive data size and unpack according to it
-        # header (size_face_bbx, size_tag_bbx, size_frm) |face_bbx | tag_bbx | frm_data
-        headerBytes = self.request.recv(12)
-        header = struct.unpack('3i', headerBytes)
-        print header
+        # | header (size_frm) | frm_data |
+        headerBytes = self.request.recv(4)
+        size = struct.unpack('1i', headerBytes)
+        print size
 
-        self.res={'hand_res':None, 'hand_res_evt':Event(), 'c1':[], 'c2':[], 'c3':[]}
+        self.res={'hand_res':None, 'hand_res_evt':Event()}
 
-        size_face_bbx = header[0]
-        size_tag_bbx = header[1]
-        size_frm = header[2]
-        size = size_face_bbx + size_tag_bbx + size_frm
         size_recv = 0
         frm_buffer = ''
 
@@ -59,22 +55,8 @@ class RequestHandler(SS.BaseRequestHandler):
                 size_recv += len(chunk)
                 #  print "size, size_recv", size, size_recv
 
-        # TODO: not sure face_num & tag_num
-        #       and the form of face_bbx and tag_bbx
-        face_num = size_face_bbx / 4
-        face_bbx = np.fromstring(frm_buffer[:16*face_num], dtype=np.int32)
-        if face_num:
-            face_bbx = face_bbx.reshape((face_num, -1))
-
-        tag_num = size_tag_bbx / 4
-        tag_bbx = np.fromstring(frm_buffer[size_face_bbx:16*tag_num], dtype=np.int32)
-        if tag_num:
-            tag_bbx = tag_bbx.reshape((tag_num, -1))
-
-
         print "Frame received"
 
-        
         # start gesture detection
         # waiting for result
         hand_inp_q.put((self.name, frm_buffer))
@@ -83,91 +65,63 @@ class RequestHandler(SS.BaseRequestHandler):
         print "hand result : ", self.res['hand_res'][:, -2:]
 
 
-        # Case 1: gesture "no" --> blurring
-        # Case 2: gesture "yes" --> not blurring 
-        # Case 3: tag alone --> blurring
-    
-        # find nearest face for each yes or no gesture
-        gesture_user = {2:[], 3:[]}
-        tag_user = []
-
-        face_centers = np.zeros((len(face_num), 2))
-        for i in range(len(face_num)):
-            center = face_bbx[i].center()
-            face_centers[i, :] = [center.x, center.y]
-
-        for (x0, y0, x1, y1, score, hand_cls) in self.res['hand_res']:
-            if hand_cls != 1: # not for natural hand
-                hand_center = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
-                dis_centers = np.linalg.norm(face_centers-hand_center, ord=2, axis=1)
-                gesture_user[hand_cls].append(np.argmin(dis_centers))
-
-        # find nearest face for each tag
-        tag_centers = np.zeros((len(tag_num), 2))
-        for i in range(len(tag_num)):
-            tag_center = tag_bbx[i].center()
-            dis_centers = np.linalg.norm(face_centers-tag_center, ord=2, axis=1)
-            tag_user.append(np.argmin(dis_centers))            
-
-        for i in range(len(face_num)):
-            # 'no' gesture is used
-            if i in gesture_user[3]:
-                print "Case 1: gesture 'no' --> blurring"
-                self.res['c1'].append(i)
-
-            # 'no' gesture is used
-            elif i in gesture_user[2]:
-                print "Case 2: gesture 'yes' --> not blurring"
-                self.res['c2'].append(i)
-
-            # no hand gesture is detected
-            elif i in tag_user:
-                print "Case 3: tag alone --> blurring"
-                self.res['c3'].append(i)
+#        # Case 1: gesture "no" --> blurring
+#        # Case 2: gesture "yes" --> not blurring 
+#        # Case 3: tag alone --> blurring
+#    
+#        # find nearest face for each yes or no gesture
+#        gesture_user = {2:[], 3:[]}
+#        tag_user = []
+#
+#        face_centers = np.zeros((len(face_num), 2))
+#        for i in range(len(face_num)):
+#            center = face_bbx[i].center()
+#            face_centers[i, :] = [center.x, center.y]
+#
+#        for (x0, y0, x1, y1, score, hand_cls) in self.res['hand_res']:
+#            if hand_cls != 1: # not for natural hand
+#                hand_center = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
+#                dis_centers = np.linalg.norm(face_centers-hand_center, ord=2, axis=1)
+#                gesture_user[hand_cls].append(np.argmin(dis_centers))
+#
+#        # find nearest face for each tag
+#        tag_centers = np.zeros((len(tag_num), 2))
+#        for i in range(len(tag_num)):
+#            tag_center = tag_bbx[i].center()
+#            dis_centers = np.linalg.norm(face_centers-tag_center, ord=2, axis=1)
+#            tag_user.append(np.argmin(dis_centers))            
+#
+#        for i in range(len(face_num)):
+#            # 'no' gesture is used
+#            if i in gesture_user[3]:
+#                print "Case 1: gesture 'no' --> blurring"
+#                self.res['c1'].append(i)
+#
+#            # 'no' gesture is used
+#            elif i in gesture_user[2]:
+#                print "Case 2: gesture 'yes' --> not blurring"
+#                self.res['c2'].append(i)
+#
+#            # no hand gesture is detected
+#            elif i in tag_user:
+#                print "Case 3: tag alone --> blurring"
+#                self.res['c3'].append(i)
 
         # send message back to the client
-        # 4 bytes (face length) | 4 bytes (hand_length) | real data
-        # prepare results to send back to the client
-        length_face = ''
-        length_hand = ''
-        real_data = ''
-        data_to_send = ''
-
-        # pack all faces
-        # 4i (bbs) | 28s (username) | 2s (case) | 10s (scenes) | 1i (policy)
-
-        # pack c1 users: gesture 'no', blurring
-        for bbs_idx in self.res['c1']:
-            bbs = transRec(recs[bbs_idx])
-            policy = self.res['bbsprofiles'][bbs_idx][3]
-            data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c1', '', policy)
-            real_data += data
-
-        # pack c2 users: gesture 'yes', not blurring
-        for bbs_idx in self.res['c2']:
-            bbs = transRec(recs[bbs_idx])
-            data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c2', '', -1)
-            real_data += data
-
-        # pack c3 users: out of distance, not blurring
-        for bbs_idx in self.res['c3']:
-            bbs = transRec(recs[bbs_idx])
-            data = struct.pack('4i28s2s10s1i', bbs[0], bbs[1], bbs[2], bbs[3], fillString(uid2name[pps[bbs_idx]], 28), 'c3', '', -1)
-            real_data += data
-
-        size_face = len(real_data)
-        length_face = struct.pack('1i', size_face)
-
+        # header (hand_size) | hand_data
+        
         # pack all hands
         # 4i (rectangles) | 1i (hand class) | 1f (score)
+        hand_data = ''
+        data_to_send = ''
+
         for x0, y0, x1, y1, scr, hand_cls in self.res['hand_res']:
             data = struct.pack('5i1f', int(x0), int(y0), int(x1), int(y1), int(hand_cls), scr)
-            real_data += data
+            hand_data += data
 
-        size_hand = len(real_data) - size_face
-        length_hand = struct.pack('1i', size_hand)
-
-        data_to_send = length_face + length_hand + real_data
+        hand_size = struct.pack('1i', len(hand_data)
+        data_to_send = hand_size + hand_data
+        
         self.request.send(data_to_send)         
 
     def finish(self):
