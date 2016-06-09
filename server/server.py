@@ -119,7 +119,7 @@ class RequestHandler(SS.BaseRequestHandler):
             data = struct.pack('5i1f', int(x0), int(y0), int(x1), int(y1), int(hand_cls), scr)
             hand_data += data
 
-        hand_size = struct.pack('1i', len(hand_data)
+        hand_size = struct.pack('1i', len(hand_data))
         data_to_send = hand_size + hand_data
         
         self.request.send(data_to_send)         
@@ -137,8 +137,7 @@ def modelPrepare(model_class_name, params, tsk_queues):
        #  "syncedmem.cpp: error == cudaSuccess (3 vs. 0)"
     #  or
        #  "math_functions.cu:28: CUBLAS_STATUS_SUCCESS (14 vs. 0) CUBLAS_STATUS_INTERNAL_ERROR"
-    caffe.set_mode_gpu()
-    caffe.set_device(0)
+    caffe.set_mode_cpu()
     modelClass = getattr(sys.modules[__name__], model_class_name)
     model = modelClass(*params)
     model.serv(*tsk_queues)
@@ -191,8 +190,8 @@ if __name__ == "__main__":
     hand_res_q = JoinableQueue()
 
     worker_hand_p1 = Process(target = modelPrepare, args = ('gestDetModel',
-    ("/home/zerry/Work/Libs/py-faster-rcnn/models/VGG16/faster_rcnn_end2end_handGesdet/test.prototxt",
-     "/home/zerry/Work/Libs/py-faster-rcnn/output/faster_rcnn_end2end_handGesdet/trainval/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel",
+    ("/Users/Jiayu/Documents/Model/VGG_HAND/test.prototxt",
+     "/Users/Jiayu/Documents/Model/VGG_HAND/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel",
      0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
     # worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel',
