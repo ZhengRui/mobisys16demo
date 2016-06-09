@@ -1,12 +1,14 @@
 package com.zerry.mobisys16demo;
 
 import android.content.Context;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.hardware.SensorManager;
+import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
@@ -27,6 +29,8 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Arrays;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -45,6 +49,9 @@ public class MainActivity extends AppCompatActivity {
     private byte[] mResultFrm;
     private static final String TAG = "MobiSys16Demo";
     private static FaceTagDet ftdetector;
+
+    private String DATA_PATH = Environment.getExternalStorageDirectory().toString() + "/VisualPrivacy/";
+    private String[] mkrNames = new String[]{"card.jpg", "privacy2.jpg", "hkust.jpg", "sunflower.jpg", "starsky.jpg"};
 
     static {
         System.loadLibrary("facetagdet");
@@ -73,8 +80,43 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         }
+
+        File dir = new File(DATA_PATH);
+        if (!dir.exists()) {
+            if (!dir.mkdirs()) {
+                Log.v(TAG, "ERROR: Creation of directory " + DATA_PATH + " on sdcard failed");
+                return;
+            } else {
+                Log.v(TAG, "Created directory " + DATA_PATH + " on sdcard");
+            }
+        }
+
+        for (int i=0; i<mkrNames.length; i++) {
+            String mkrname = mkrNames[i];
+            if (!(new File(DATA_PATH + mkrname)).exists()) {
+                try {
+                    AssetManager assetManager = getAssets();
+                    InputStream in = assetManager.open(mkrname);
+                    OutputStream out = new FileOutputStream(DATA_PATH
+                            + mkrname);
+                    byte[] buf = new byte[1024];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                    in.close();
+                    out.close();
+                    Log.v(TAG, "Copied " + mkrname);
+                } catch (IOException e) {
+                    Log.e(TAG, "Was unable to copy " + mkrname + e.toString());
+                }
+            }
+        }
+
         if (ftdetector == null) {
             ftdetector = new FaceTagDet(cascadeFile.getAbsolutePath());
+            for (int i=0; i<mkrNames.length; i++)
+                ftdetector.extractTagFeatures(DATA_PATH+mkrNames[i]);
         }
     }
 
@@ -169,7 +211,41 @@ public class MainActivity extends AppCompatActivity {
     private void process(byte[] data) {
         if (ftdetector == null) initialize();
         mResultFrm = ftdetector.droidJPEGCalibrate(data, front1back0, orientCase);
-        mResultFrm = ftdetector.detectAndBlurJPEG(mResultFrm);
+        ftdetector.detectFaceTagFromJPEG(mResultFrm);
+
+        int[] facepos = ftdetector.getBBXPos(0);
+        int[] tagpos = ftdetector.getBBXPos(1);
+//        mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
+        mResultFrm = ftdetector.drawTagsPos(mResultFrm, tagpos);
+
+        Log.i(TAG, "faces coordinates: " + Arrays.toString(facepos));
+        Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
+
+        int facenum = facepos.length / 4;
+        int[][] faceposArr = new int[facenum][4];
+        boolean[] faceprocArr = new boolean[facenum];
+
+        for(int i=0; i < facenum; i++) {
+            faceposArr[i][0] = facepos[4*i];
+            faceposArr[i][1] = facepos[4*i+1];
+            faceposArr[i][2] = facepos[4*i+2];
+            faceposArr[i][3] = facepos[4*i+3];
+
+            faceprocArr[i] = true;
+        }
+
+        // faceposArr: int[facenum][4], facepos: int[facenum*4], faceprocArr: boolean[facenum]
+        // tagpos: int[tagnum*8], 8 is 8 coordinates of 4 points, 8 is because
+        //  they are not necessarily rectangle after affine projection
+        // decision making: based on faceposArr(or facepos), tagpos, and handposArr,
+        //  assign value to faceprocArr, true means will blur it
+
+        // -- decision making start
+
+
+        // -- decision making end
+
+        mResultFrm = ftdetector.bbxProcess(mResultFrm, faceposArr, faceprocArr);
     }
 
     private void display() {

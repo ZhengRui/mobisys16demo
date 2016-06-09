@@ -14,8 +14,12 @@ message(STATUS "OpenCV version:  (${OpenCV_VERSION})")
 message(STATUS "    libraries: (${OpenCV_LIBS})")
 message(STATUS "    include path: (${OpenCV_INCLUDE_DIRS})")
 
-include_directories(${OpenCV_INCLUDE_DIRS})
+include_directories(${OpenCV_INCLUDE_DIRS} ../../../Libs/opencv-2.4.11/modules/nonfree/include)
 set(LIBS ${LIBS} ${OpenCV_LIBS})
+
+add_subdirectory(cv2nonfree)
+set(LIBS ${LIBS} opencv2Nonfree)
+message(STATUS "LIBS in root: (${LIBS})")
 
 # dlib
 set(source_files ${source_files}

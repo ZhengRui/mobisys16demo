@@ -16,6 +16,12 @@ extern "C" {
     }
 
 
+    JNIEXPORT jlong JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_extractTagFeatures(JNIEnv* env, jclass, jlong thiz, jstring tagPath) {
+        const char* tagFilePath = env->GetStringUTFChars(tagPath, NULL);
+        ((FaceDetector*)thiz)->extractTagFeatures(tagFilePath);
+        env->ReleaseStringUTFChars(tagPath, tagFilePath);
+    }
+
     JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_droidJPEGCalibrate(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata, jint front1orback0, jint orientCase) {
         jbyte* picjData = env->GetByteArrayElements(jpegdata, 0);
         uchar* buf = (uchar*) picjData;
@@ -39,7 +45,7 @@ extern "C" {
         return jpegCalibrated;
     }
 
-    JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_boxesProcess(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata, jobjectArray bbxposArr, jobjectArray bbxtxtArr, jbooleanArray bbxprocArr, jintArray bbxproctypeArr) {
+    JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_boxesProcess(JNIEnv* env, jclass, jbyteArray jpegdata, jobjectArray bbxposArr, jbooleanArray bbxprocArr) {
         jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
         uchar* buf = (uchar*) imgjData;
         size_t len = env->GetArrayLength(jpegdata);
@@ -49,43 +55,21 @@ extern "C" {
         int bbxnum = env->GetArrayLength(bbxposArr);
         // LOGD("boxes number: %d", bbxnum);
         jboolean* bbxproc = env->GetBooleanArrayElements(bbxprocArr, 0);
-        jint* bbxproctype = env->GetIntArrayElements(bbxproctypeArr, 0);
-        cv::Scalar color;
 
         for (int i=0; i < bbxnum; i++) {
             jintArray bbxposJ = (jintArray) env->GetObjectArrayElement(bbxposArr, i);
             jint *bbxpos = env->GetIntArrayElements(bbxposJ, 0);
 
-            jstring bbxtxtJ = (jstring) env->GetObjectArrayElement(bbxtxtArr, i);
-            const char* bbxtxt = env->GetStringUTFChars(bbxtxtJ, NULL);
-
             // LOGD("box position: (%d, %d) - (%d, %d), text: %s, do blur: %s, blur type: %d", bbxpos[0], bbxpos[1], bbxpos[2], bbxpos[3], bbxtxt, bbxproc[i]?"yes":"no", bbxproctype[i]);
-
-            if (bbxproctype[i] == 2) {
-                color = cv::Scalar(0,0,255);
-            } else {
-                color = cv::Scalar(0,255,0);
-            }
 
             cv::Rect roi = cv::Rect(cv::Point(bbxpos[0], bbxpos[1]), cv::Point(bbxpos[2], bbxpos[3]));
 
-            if (bbxproc[i]) {
-                if (!bbxproctype[i]) {
-                    // blur face, default
-                    cv::medianBlur(img(roi), img(roi), 77);
-                } else {
-                    // blur body
-                }
-            }
-
-            cv::rectangle(img, roi, color, 2);
-            cv::putText(img, bbxtxt, cv::Point(bbxpos[0], bbxpos[1]-10), cv::FONT_HERSHEY_DUPLEX, 0.8, color, 2);
+            if (bbxproc[i])
+                cv::medianBlur(img(roi), img(roi), 77);
 
             env->ReleaseIntArrayElements(bbxposJ, bbxpos, JNI_ABORT);
-            env->ReleaseStringUTFChars(bbxtxtJ, bbxtxt);
         }
         env->ReleaseBooleanArrayElements(bbxprocArr, bbxproc, JNI_ABORT);
-        env->ReleaseIntArrayElements(bbxproctypeArr, bbxproctype, JNI_ABORT);
 
         std::vector<int> params;
         params.push_back(CV_IMWRITE_JPEG_QUALITY);
@@ -99,17 +83,103 @@ extern "C" {
         return jpegBoxsProcessed;
     }
 
-    JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_detectAndBlurJPEG(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata) {
+    JNIEXPORT void JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_detectFaceTagFromJPEG(JNIEnv* env, jclass, jlong thiz, jbyteArray jpegdata) {
         jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
         uchar* buf = (uchar*) imgjData;
         size_t len = env->GetArrayLength(jpegdata);
         std::vector<uchar> cdata(buf, buf+len);
         cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
         cv::Mat imgDet = img;
+        ((FaceDetector*)thiz)->detectFace(imgDet);
+        ((FaceDetector*)thiz)->detectTag(imgDet);
 
-        std::vector<cv::Rect> bbsFiltered = ((FaceDetector*)thiz)->detectMat(imgDet);
-        for(std::vector<cv::Rect>::iterator r = bbsFiltered.begin(); r != bbsFiltered.end(); r++) {
-            cv::medianBlur(img(*r), img(*r), 77);
+        env->ReleaseByteArrayElements(jpegdata, imgjData, JNI_ABORT);
+    }
+
+    JNIEXPORT void JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_detectFaceTagFromRaw(JNIEnv* env, jclass, jlong thiz, jint width, jint height, jbyteArray frmdata, jint front1orback0, jint orientCase) {
+        // LOGD("native detect() called.");
+        jbyte* frmjData = env->GetByteArrayElements(frmdata, 0);
+        // call some image processing function
+        // LOGD("frame size: %d X %d, data length: %d", width, height, env->GetArrayLength(frmdata));
+        ((FaceDetector*)thiz)->detectFaceTag((int) width, (int) height, (unsigned char*) frmjData, (int) front1orback0, (int) orientCase);
+
+        env->ReleaseByteArrayElements(frmdata, frmjData, JNI_ABORT);
+    }
+
+
+    JNIEXPORT jintArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_getBBXPos(JNIEnv* env, jclass, jlong thiz, jint face0tag1) {
+        jintArray posArr;
+        if (!face0tag1) {
+            std::vector<cv::Rect> pos;
+            pos = ((FaceDetector*)thiz)->bbsFiltered;
+            posArr = env->NewIntArray(pos.size() * 4);
+            jint posBuf[4];
+            int p = 0;
+            for(std::vector<cv::Rect>::const_iterator r = pos.begin(); r != pos.end(); r++) {
+                posBuf[0] = r->x;
+                posBuf[1] = r->y;
+                posBuf[2] = r->x + r->width;
+                posBuf[3] = r->y + r->height;
+                env->SetIntArrayRegion(posArr, p, 4, posBuf);
+                p += 4;
+            }
+        } else {
+            std::vector<cv::Point> pos;
+            pos = ((FaceDetector*)thiz)->bbsTags;
+            posArr = env->NewIntArray(pos.size() * 2);
+            jint posBuf[2];
+            int p = 0;
+            for(std::vector<cv::Point>::const_iterator r = pos.begin(); r != pos.end(); r++) {
+                posBuf[0] = r->x;
+                posBuf[1] = r->y;
+                env->SetIntArrayRegion(posArr, p, 2, posBuf);
+                p += 2;
+            }
+        }
+
+        return posArr;
+    }
+
+
+    JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_drawFaces(JNIEnv* env, jclass, jbyteArray jpegdata, jintArray faceposArr) {
+        jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
+        uchar* buf = (uchar*) imgjData;
+        size_t len = env->GetArrayLength(jpegdata);
+        std::vector<uchar> cdata(buf, buf+len);
+        cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
+
+        size_t facenum = env->GetArrayLength(faceposArr) / 4;
+        jint* facejData = env->GetIntArrayElements(faceposArr, 0);
+        for (size_t i=0; i<facenum; i++)
+            cv::rectangle(img, cv::Point(facejData[4*i], facejData[4*i+1]), cv::Point(facejData[4*i+2], facejData[4*i+3]), cv::Scalar(0,0,255), 2);
+
+        std::vector<int> params;
+        params.push_back(CV_IMWRITE_JPEG_QUALITY);
+        params.push_back(100);
+        std::vector<uchar> cdataEnc;
+        cv::imencode(".jpg", img, cdataEnc, params);
+        jbyteArray jpegBoxsProcessed = env->NewByteArray(cdataEnc.size());
+        env->SetByteArrayRegion(jpegBoxsProcessed, 0, cdataEnc.size(), (jbyte*)&cdataEnc[0]);
+
+        env->ReleaseByteArrayElements(jpegdata, imgjData, JNI_ABORT);
+        env->ReleaseIntArrayElements(faceposArr, facejData, JNI_ABORT);
+        return jpegBoxsProcessed;
+    }
+
+    JNIEXPORT jbyteArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_drawTags(JNIEnv* env, jclass, jbyteArray jpegdata, jintArray tagposArr) {
+        jbyte* imgjData = env->GetByteArrayElements(jpegdata, 0);
+        uchar* buf = (uchar*) imgjData;
+        size_t len = env->GetArrayLength(jpegdata);
+        std::vector<uchar> cdata(buf, buf+len);
+        cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
+
+        size_t tagnum = env->GetArrayLength(tagposArr) / 8;
+        jint* tagjData = env->GetIntArrayElements(tagposArr, 0);
+        for (size_t i=0; i<tagnum; i++) {
+            cv::line(img, cv::Point(tagjData[8*i], tagjData[8*i+1]), cv::Point(tagjData[8*i+2], tagjData[8*i+3]), cv::Scalar(0,255,0), 2);
+            cv::line(img, cv::Point(tagjData[8*i+2], tagjData[8*i+3]), cv::Point(tagjData[8*i+4], tagjData[8*i+5]), cv::Scalar(0,255,0), 2);
+            cv::line(img, cv::Point(tagjData[8*i+4], tagjData[8*i+5]), cv::Point(tagjData[8*i+6], tagjData[8*i+7]), cv::Scalar(0,255,0), 2);
+            cv::line(img, cv::Point(tagjData[8*i+6], tagjData[8*i+7]), cv::Point(tagjData[8*i], tagjData[8*i+1]), cv::Scalar(0,255,0), 2);
         }
 
         std::vector<int> params;
@@ -117,66 +187,14 @@ extern "C" {
         params.push_back(100);
         std::vector<uchar> cdataEnc;
         cv::imencode(".jpg", img, cdataEnc, params);
-        jbyteArray jpegProcessed = env->NewByteArray(cdataEnc.size());
-        env->SetByteArrayRegion(jpegProcessed, 0, cdataEnc.size(), (jbyte*)&cdataEnc[0]);
+        jbyteArray jpegBoxsProcessed = env->NewByteArray(cdataEnc.size());
+        env->SetByteArrayRegion(jpegBoxsProcessed, 0, cdataEnc.size(), (jbyte*)&cdataEnc[0]);
 
         env->ReleaseByteArrayElements(jpegdata, imgjData, JNI_ABORT);
-        return jpegProcessed;
+        env->ReleaseIntArrayElements(tagposArr, tagjData, JNI_ABORT);
+        return jpegBoxsProcessed;
     }
 
-
-    JNIEXPORT jintArray JNICALL Java_com_zerry_mobisys16demo_FaceTagDet_detect(JNIEnv* env, jclass, jlong thiz, jint width, jint height, jbyteArray frmdata, jint front1orback0, jint orientCase) {
-        // LOGD("native detect() called.");
-        jbyte* frmjData = env->GetByteArrayElements(frmdata, 0);
-        // call some image processing function
-        // LOGD("frame size: %d X %d, data length: %d", width, height, env->GetArrayLength(frmdata));
-        std::vector<cv::Rect> bbsFiltered = ((FaceDetector*)thiz)->detect((int) width, (int) height, (unsigned char*) frmjData, (int) front1orback0, (int) orientCase);
-        jintArray faceArr = env->NewIntArray(bbsFiltered.size() * 4);
-        jint faceBuf[4];
-        int p = 0;
-        //LOGD("Orient case: %d, Camera index: %d", orientCase, front1orback0);
-        for(std::vector<cv::Rect>::const_iterator r = bbsFiltered.begin(); r != bbsFiltered.end(); r++) {
-            switch (orientCase) {
-                case 0:
-                    faceBuf[0] = front1orback0 ? height - r->x - r->width : r->x;
-                    faceBuf[1] = r->y;
-                    faceBuf[2] = faceBuf[0] + r->width;
-                    faceBuf[3] = faceBuf[1] + r->height;
-                    break;
-
-                case 1:
-                    faceBuf[0] = r->y;
-                    faceBuf[1] = front1orback0 ? r->x : width - r->x - r->width;
-                    faceBuf[2] = faceBuf[0] + r->height;
-                    faceBuf[3] = faceBuf[1] + r->width;
-                    break;
-
-                case 2:
-                    faceBuf[0] = front1orback0 ? r->x : height - r->x - r->width;
-                    faceBuf[1] = width - r->y - r->height;
-                    faceBuf[2] = faceBuf[0] + r->width;
-                    faceBuf[3] = faceBuf[1] + r->height;
-                    break;
-
-                case 3:
-                    faceBuf[0] = height - r->y - r->height;
-                    faceBuf[1] = front1orback0 ? width - r->x - r->width : r->x;
-                    faceBuf[2] = faceBuf[0] + r->height;
-                    faceBuf[3] = faceBuf[1] + r->width;
-                    break;
-
-                default:
-                    LOGD("Wrong orientCase value, should be {0, 1, 2, 3}");
-                    break;
-            }
-
-            env->SetIntArrayRegion(faceArr, p, 4, faceBuf);
-            p += 4;
-        }
-
-        env->ReleaseByteArrayElements(frmdata, frmjData, JNI_ABORT);
-        return faceArr;
-    }
 
 
 #ifdef __cplusplus
