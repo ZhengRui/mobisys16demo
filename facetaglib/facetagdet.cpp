@@ -112,6 +112,10 @@ void FaceDetector::detectFace(Mat &BGRMat) {
     }
     LOGD("3rdStage: Detect %d faces", (int) bbsFiltered.size());
 
+    bbsTagBelow.clear();
+    for(size_t i=0; i<bbsFiltered.size(); i++)
+        bbsTagBelow.push_back(0);
+
     BGRMat = BGRMatBak;
 }
 
@@ -131,6 +135,7 @@ void FaceDetector::detectTag(Mat &BGRMat) {
     vector<DMatch> matches, good_matches;
     vector<Point2f> obj, scene, obj_corners(4), scene_corners(4);
 
+    int ith = 0;
     for(vector<Rect>::iterator r = mkrpps.begin(); r != mkrpps.end()-1; r++) { // for each proposal
         LOGD("proposal position tl - br: (%d, %d) - (%d, %d)", r->tl().x, r->tl().y, r->br().x, r->br().y);
         cvtColor(BGRMat(*r), prop_gray, CV_BGR2GRAY);
@@ -184,8 +189,11 @@ void FaceDetector::detectTag(Mat &BGRMat) {
             bbsTags.push_back(tagP2);
             Point tagP3 = Point((*r).tl()+Point(scene_corners[3].x, scene_corners[3].y));
             bbsTags.push_back(tagP3);
-            LOGD("find tag type: %d, position : (%d, %d) - (%d, %d) - (%d, %d) - (%d, %d)", m, tagP0.x, tagP0.y, tagP1.x, tagP1.y, tagP2.x, tagP2.y, tagP3.x, tagP3.y);
+
+            bbsTagBelow[ith] = m+1;
+            LOGD("find tag type: %d, position : (%d, %d) - (%d, %d) - (%d, %d) - (%d, %d)", m+1, tagP0.x, tagP0.y, tagP1.x, tagP1.y, tagP2.x, tagP2.y, tagP3.x, tagP3.y);
         }
+        ith++;
     }
 }
 

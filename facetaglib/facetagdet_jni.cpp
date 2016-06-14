@@ -112,16 +112,21 @@ extern "C" {
         if (!face0tag1) {
             std::vector<cv::Rect> pos;
             pos = ((FaceDetector*)thiz)->bbsFiltered;
-            posArr = env->NewIntArray(pos.size() * 4);
-            jint posBuf[4];
+            std::vector<int> tagBelow;
+            tagBelow = ((FaceDetector*)thiz)->bbsTagBelow;
+            posArr = env->NewIntArray(pos.size() * 5);
+            jint posBuf[5];
             int p = 0;
+            int ith=0;
             for(std::vector<cv::Rect>::const_iterator r = pos.begin(); r != pos.end(); r++) {
                 posBuf[0] = r->x;
                 posBuf[1] = r->y;
                 posBuf[2] = r->x + r->width;
                 posBuf[3] = r->y + r->height;
-                env->SetIntArrayRegion(posArr, p, 4, posBuf);
-                p += 4;
+                posBuf[4] = tagBelow[ith];
+                env->SetIntArrayRegion(posArr, p, 5, posBuf);
+                p += 5;
+                ith++;
             }
         } else {
             std::vector<cv::Point> pos;
@@ -137,6 +142,7 @@ extern "C" {
             }
         }
 
+        LOGD("bbx length: %d", env->GetArrayLength(posArr));
         return posArr;
     }
 
@@ -148,10 +154,10 @@ extern "C" {
         std::vector<uchar> cdata(buf, buf+len);
         cv::Mat img = cv::imdecode(cdata, CV_LOAD_IMAGE_COLOR);
 
-        size_t facenum = env->GetArrayLength(faceposArr) / 4;
+        size_t facenum = env->GetArrayLength(faceposArr) / 5;
         jint* facejData = env->GetIntArrayElements(faceposArr, 0);
         for (size_t i=0; i<facenum; i++)
-            cv::rectangle(img, cv::Point(facejData[4*i], facejData[4*i+1]), cv::Point(facejData[4*i+2], facejData[4*i+3]), cv::Scalar(0,0,255), 2);
+            cv::rectangle(img, cv::Point(facejData[5*i], facejData[5*i+1]), cv::Point(facejData[5*i+2], facejData[5*i+3]), cv::Scalar(0,0,255), 2);
 
         std::vector<int> params;
         params.push_back(CV_IMWRITE_JPEG_QUALITY);

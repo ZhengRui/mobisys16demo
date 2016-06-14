@@ -215,23 +215,23 @@ public class MainActivity extends AppCompatActivity {
 
         int[] facepos = ftdetector.getBBXPos(0);
         int[] tagpos = ftdetector.getBBXPos(1);
-//        mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
+        // mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
         mResultFrm = ftdetector.drawTagsPos(mResultFrm, tagpos);
 
         Log.i(TAG, "faces coordinates: " + Arrays.toString(facepos));
-        Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
+        // Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
 
-        int facenum = facepos.length / 4;
+        int facenum = facepos.length / 5;
         int[][] faceposArr = new int[facenum][4];
         boolean[] faceprocArr = new boolean[facenum];
 
         for(int i=0; i < facenum; i++) {
-            faceposArr[i][0] = facepos[4*i];
-            faceposArr[i][1] = facepos[4*i+1];
-            faceposArr[i][2] = facepos[4*i+2];
-            faceposArr[i][3] = facepos[4*i+3];
+            faceposArr[i][0] = facepos[5*i];
+            faceposArr[i][1] = facepos[5*i+1];
+            faceposArr[i][2] = facepos[5*i+2];
+            faceposArr[i][3] = facepos[5*i+3];
 
-            faceprocArr[i] = true;
+            faceprocArr[i] = facepos[5*i+4] > 0;
         }
 
         // faceposArr: int[facenum][4], facepos: int[facenum*4], faceprocArr: boolean[facenum]
