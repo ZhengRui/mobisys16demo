@@ -37,6 +37,10 @@ public class FaceTagDet {
         return drawTags(jpegdata, tagpos);
     }
 
+    public byte[] drawHandsPos(byte[] jpegdata, int[][] handpos, String[] handtxt) {
+        return drawHands(jpegdata, handpos, handtxt);
+    }
+
     public byte[] bbxProcess(byte[] jpegdata, int[][] bbxposArr, boolean[] bbxprocArr) {
         return boxesProcess(jpegdata, bbxposArr, bbxprocArr);
     }
@@ -51,6 +55,7 @@ public class FaceTagDet {
     private static native int[] getBBXPos(long thiz, int face0tag1);
     private static native byte[] drawFaces(byte[] jpegdata, int[] facepos);
     private static native byte[] drawTags(byte[] jpegdata, int[] tagpos);
+    private static native byte[] drawHands(byte[] jpegdata, int[][] handpos, String[] handtxt);
     private static native byte[] boxesProcess(byte[] jpegdata, int[][] bbxposArr, boolean[] bbxprocArr);
 
 }

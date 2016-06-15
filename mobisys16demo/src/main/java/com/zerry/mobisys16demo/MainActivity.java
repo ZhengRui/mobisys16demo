@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.hardware.SensorManager;
+import android.os.AsyncTask;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -30,10 +31,16 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
-
     private FloatingActionButton mFabBtnTake, mFabBtnYes, mFabBtnNo;
     private SwitchButton camSwitchBtn;
     private static int front1back0 = 0;
@@ -45,13 +52,27 @@ public class MainActivity extends AppCompatActivity {
     private Camera.Size size;
     private Camera.Size imgSize;
     private ImageView mImageView;
+    private int xmax, ymax;
     private OrientationEventListener mOrientationListener;
     private byte[] mResultFrm;
-    private static final String TAG = "MobiSys16Demo";
     private static FaceTagDet ftdetector;
 
-    private String DATA_PATH = Environment.getExternalStorageDirectory().toString() + "/VisualPrivacy/";
-    private String[] mkrNames = new String[]{"card.jpg", "privacy2.jpg", "hkust.jpg", "sunflower.jpg", "starsky.jpg"};
+    private Socket mSocket;
+    private OutputStream mOutputStream;
+    private InputStream mInputStream;
+    private boolean isSocketTaskCompleted = false;
+
+    private int[][] faceposArr;
+    private boolean[] faceprocArr;
+    private int[][] handposArr;
+    private String[] handtxtArr;
+
+    private static final String TAG = "MobiSys16Demo";
+    private final String DATA_PATH = Environment.getExternalStorageDirectory().toString() + "/VisualPrivacy/";
+    private final String[] mkrNames = new String[]{"card.jpg", "privacy2.jpg", "hkust.jpg", "sunflower.jpg", "starsky.jpg"};
+
+    private final String DST_ADDRESS = "10.89.159.44";
+    private final int DST_PORT = 9999;
 
     static {
         System.loadLibrary("facetagdet");
@@ -152,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         mImageView = (ImageView) findViewById(R.id.imageView);
-        mImageView.setBackgroundColor(Color.rgb(0,0,0));
+        mImageView.setBackgroundColor(Color.rgb(0, 0, 0));
         mImageView.setVisibility(View.INVISIBLE);
 
         mFabBtnYes = (FloatingActionButton) findViewById(R.id.fab_button_yes);
@@ -199,31 +220,43 @@ public class MainActivity extends AppCompatActivity {
 //                        ", case " + orientCase);
             }
         };
+
     }
 
     private Camera.PictureCallback mJpegCallback = new Camera.PictureCallback() {
-        public void onPictureTaken(byte[] data, Camera camera) {
-            process(data);
-            display();
+        public void onPictureTaken(final byte[] data, Camera camera) {
+            new Thread(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            process(data);
+                        }
+                    }
+            ).start();
         }
     };
 
     private void process(byte[] data) {
         if (ftdetector == null) initialize();
         mResultFrm = ftdetector.droidJPEGCalibrate(data, front1back0, orientCase);
+
+        // create socket and send data to the server
+        new socketTask(DST_ADDRESS, DST_PORT).execute(mResultFrm);
+
+        // continue face and tag detection
         ftdetector.detectFaceTagFromJPEG(mResultFrm);
 
         int[] facepos = ftdetector.getBBXPos(0);
         int[] tagpos = ftdetector.getBBXPos(1);
-        // mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
+        mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
         mResultFrm = ftdetector.drawTagsPos(mResultFrm, tagpos);
 
         Log.i(TAG, "faces coordinates: " + Arrays.toString(facepos));
-        // Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
+        Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
 
         int facenum = facepos.length / 5;
-        int[][] faceposArr = new int[facenum][4];
-        boolean[] faceprocArr = new boolean[facenum];
+        faceposArr = new int[facenum][4];
+        faceprocArr = new boolean[facenum];
 
         for(int i=0; i < facenum; i++) {
             faceposArr[i][0] = facepos[5*i];
@@ -240,12 +273,173 @@ public class MainActivity extends AppCompatActivity {
         // decision making: based on faceposArr(or facepos), tagpos, and handposArr,
         //  assign value to faceprocArr, true means will blur it
 
-        // -- decision making start
+        // waiting for hand results form socketTask
+        //while (!isSocketTaskCompleted) {
+        //    Log.i(TAG, "waiting for asyncTask result");
+        //    try {
+        //        Thread.sleep(500);
+        //    } catch (InterruptedException e) {
+        //        e.printStackTrace();
+        //    }
+        //}
+
+        //isSocketTaskCompleted = false; // wait for next result
+    }
+
+    private class socketTask extends AsyncTask<byte[], Void, Void> {
+        String dstAddress;
+        int dstPort;
+
+        socketTask(String addr, int port) {
+            this.dstAddress = addr;
+            this.dstPort = port;
+        }
+
+        @Override
+        protected Void doInBackground(byte[]... data) {
+            // prepare package content
+            // header (frmSize, 1 integer) | frmData
+            int frmSize = data[0].length;
+            Log.i(TAG, "data size: " + Integer.toString(frmSize));
+
+            xmax = (orientCase == 0 || orientCase == 2) ? imgSize.height : imgSize.width;
+            ymax = (orientCase == 0 || orientCase == 2) ? imgSize.width : imgSize.height;
+
+            // allocate 4 byte for packetContent
+            byte[] frmsize = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(frmSize).array();
+            byte[] packetContent = new byte[4 + frmSize];
+            System.arraycopy(frmsize, 0, packetContent, 0, 4);
+            System.arraycopy(data[0], 0, packetContent, 4, frmSize);
+
+            // send package content and then receive data
+            try {
+                mSocket = new Socket(dstAddress, dstPort);
+                Log.i(TAG, "Socket established");
+                mOutputStream = mSocket.getOutputStream();
+                mInputStream = mSocket.getInputStream();
+
+                if (mOutputStream != null) {
+                    try {
+                        Log.i(TAG, "start sending...");
+                        mOutputStream.write(packetContent);
+                        mOutputStream.flush();
+                        Log.i(TAG, "finish sending...");
 
 
-        // -- decision making end
+                        // start receiving data
+                        // header (4 bytes) | resData (dataSize bytes)
+                        Log.i(TAG, "start receiving...");
+                        byte[] header = new byte[4];
+                        int readSize = 0;
+                        readSize = mInputStream.read(header);
+                        assert(readSize == 4);
 
-        mResultFrm = ftdetector.bbxProcess(mResultFrm, faceposArr, faceprocArr);
+                        int[] dataSize = byteToInt(header);
+                        byte[] resData = new byte[dataSize[0]];
+                        readSize = mInputStream.read(resData);
+                        assert(readSize == dataSize[0]);
+
+                        // parse hand result
+                        int bbxNum = dataSize[0] / 24;
+                        handposArr = new int[bbxNum][4];
+                        handtxtArr = new String[bbxNum];
+                        int ibbx = 0;
+
+                        for (int i = 0; i < dataSize[0]; i += 24) {
+                            int[] bbxpos = byteToInt(Arrays.copyOfRange(resData, i, i+16));
+                            int bbxcls = byteToInt(Arrays.copyOfRange(resData, i+16, i+20))[0];
+                            float scr = ByteBuffer.wrap(Arrays.copyOfRange(resData, i+20, i+24)).order(ByteOrder.LITTLE_ENDIAN).getFloat();
+                            Log.i(TAG, "hand bbx: " + Arrays.toString(bbxpos) + ", class: " + bbxcls + ", score: " + scr);
+
+                            bbxpos[0] = Math.max(bbxpos[0], 0);
+                            bbxpos[1] = Math.max(bbxpos[1], 0);
+                            bbxpos[2] = Math.min(bbxpos[2], xmax);
+                            bbxpos[3] = Math.min(bbxpos[3], ymax);
+
+                            handposArr[ibbx] = bbxpos;
+                            handtxtArr[ibbx] = (bbxcls == 2 ? "yes" : (bbxcls == 3 ? "no" : "others")) + " " + scr;
+
+                            ibbx ++;
+                        }
+
+                        mResultFrm = ftdetector.drawHandsPos(mResultFrm, handposArr, handtxtArr);
+
+                        // -- decision making start
+                        // Case 1: gesture "no" --> blurring
+                        // Case 2: gesture "yes" --> not blurring
+                        // Case 3: tag alone --> blurring
+
+                        // find nearest face for each yes or no gesture.
+                        // in gestureUser, key is the face index, value is "yes" or "no".
+                        Map<Integer, String> gestureUser = new HashMap<>();
+
+                        int facenum = faceposArr.length;
+                        int[][] faceCenters = new int[facenum][2];
+                        for (int i = 0; i < facenum; i ++) {
+                            faceCenters[i] = getCenter(faceposArr[i]);
+                        }
+
+                        int handnum = handposArr.length;
+                        for (int i = 0; i < handnum; i++) {
+                            if (handtxtArr[i].contains("yes")) {
+                                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters),  "yes");
+
+                            } else if (handtxtArr[i].contains("no")) {
+                                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters), "no");
+                            }
+                        }
+
+                        Log.i(TAG, String.valueOf(gestureUser));
+
+                        // processing each face, proArr is true for face has tag, and false for others.
+                        // We put value no after yes, so if yes and no gesture find same nearest face, no will overwrite.
+                        // create the map for detailed case situation
+                        //Map<String, ArrayList<Integer>> results = new HashMap<>();
+                        //List<Integer> case1 = new ArrayList<>();
+                        //List<Integer> case2 = new ArrayList<>();
+                        //List<Integer> case3 = new ArrayList<>();
+
+                        for (int i = 0; i < facenum; i++) { // for those who use gestures
+                            if (gestureUser.containsKey(i) && gestureUser.get(i).contains("yes")) {
+                                faceprocArr[i] = false;
+                            } else if (gestureUser.containsKey(i) && gestureUser.get(i).contains("no")){
+                                faceprocArr[i] = true;
+                            }
+                        }
+
+                        // -- decision making end
+
+                        mResultFrm = ftdetector.bbxProcess(mResultFrm, faceposArr, faceprocArr);
+
+
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                        if (mSocket != null) {
+                            Log.i(TAG, "Connection lost.");
+                            try {
+                                mOutputStream.close();
+                                mSocket.close();
+                                mOutputStream = null;
+                                mSocket = null;
+                            } catch (IOException e1) {
+                                e1.printStackTrace();
+                            }
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            //isSocketTaskCompleted = true;
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void params) {
+            display();
+        }
+
     }
 
     private void display() {
@@ -284,7 +478,6 @@ public class MainActivity extends AppCompatActivity {
             Log.i(TAG, " surfaceDestroyed() called.");
         }
     };
-
 
     private void initPreview(int width, int height) {
         Log.i(TAG, "initPreview() called");
@@ -339,6 +532,73 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void switchCam() {
+        if (mCamera != null && mInPreview) {
+            mCamera.stopPreview();
+            mCamera.release();
+            mCamera = null;
+            mInPreview = false;
+            mCameraConfigured = false;
+        }
+
+        front1back0 = 1 - front1back0;
+        mCamera = Camera.open(front1back0);   // 0 for back, 1 for frontal
+        mCamera.setDisplayOrientation(90);
+        initPreview(size.width, size.height);
+        startPreview();
+    }
+
+    private int[] byteToInt(byte[] input) {
+        int[] output = new int[input.length/4];
+
+        for (int i = 0; i < input.length; i += 4) {
+            output[i/4] = input[i] & 0xFF |
+                    (input[i+1] & 0xFF) << 8 |
+                    (input[i+2] & 0xFF) << 16 |
+                    (input[i+3] & 0xFF) << 24;
+        }
+        return output;
+    }
+
+    private int[] getCenter(int[] coordinates) {
+        int[] center = new int[2];
+
+        if (coordinates.length == 4) {
+            center[0] = (coordinates[0] + coordinates[2]) / 2;
+            center[1] = (coordinates[1] + coordinates[3]) / 2;
+        } else {
+            Log.i(TAG, "coordinates do not have four elements");
+            System.exit(1);
+        }
+
+        return center;
+    }
+
+    private int getNearest(int[] a, int[][] b) {
+        int index = -1;
+        double distance = 100000;
+        double tmp;
+
+        for (int i = 0; i < b.length; i ++) {
+            tmp = Math.sqrt(Math.pow(b[i][0] - a[0], 2) + Math.pow(b[i][1] - a[1], 2));
+            if (tmp < distance) {
+                distance = tmp;
+                index = i;
+            }
+        }
+
+        return index;
+    }
+
+    private double l2Norm(int[] a) {
+        double result = 0.0f;
+        for (int i = 0; i < a.length; i++) {
+            result += Math.pow(a[i], 2.0);
+        }
+
+        return Math.sqrt(result);
+    }
+
     @Override
     public void onResume() {
         Log.i(TAG, " onResume() called.");
@@ -372,22 +632,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onDestroy() {
         Log.i(TAG, " onDestroy() called.");
         super.onDestroy();
-    }
-
-    private void switchCam() {
-        if (mCamera != null && mInPreview) {
-            mCamera.stopPreview();
-            mCamera.release();
-            mCamera = null;
-            mInPreview = false;
-            mCameraConfigured = false;
-        }
-
-        front1back0 = 1 - front1back0;
-        mCamera = Camera.open(front1back0);   // 0 for back, 1 for frontal
-        mCamera.setDisplayOrientation(90);
-        initPreview(size.width, size.height);
-        startPreview();
     }
 
 }
