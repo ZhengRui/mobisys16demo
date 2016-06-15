@@ -26,8 +26,9 @@ public:
     void detectTag(cv::Mat &BGRMat);
     void detectFaceTag(int width, int height, unsigned char* frmCData, int front1orback0, int orientCase);
     std::vector<cv::Rect> bbsFiltered;
+    std::vector<int> bbsTagBelow;
     std::vector<cv::Point> bbsTags;
-
+    
 private:
     std::vector<cv::Rect> bbs;
     std::vector<cv::Point> size_marker_s;
