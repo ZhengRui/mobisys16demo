@@ -28,7 +28,7 @@ public:
     std::vector<cv::Rect> bbsFiltered;
     std::vector<int> bbsTagBelow;
     std::vector<cv::Point> bbsTags;
-    
+
 private:
     std::vector<cv::Rect> bbs;
     std::vector<cv::Point> size_marker_s;
