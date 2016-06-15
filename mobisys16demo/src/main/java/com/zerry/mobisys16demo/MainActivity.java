@@ -62,6 +62,8 @@ public class MainActivity extends AppCompatActivity {
     private InputStream mInputStream;
     private boolean isSocketTaskCompleted = false;
 
+    private int[][] faceposArr;
+    private boolean[] faceprocArr;
     private int[][] handposArr;
     private String[] handtxtArr;
 
@@ -222,9 +224,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private Camera.PictureCallback mJpegCallback = new Camera.PictureCallback() {
-        public void onPictureTaken(byte[] data, Camera camera) {
-            process(data);
-            display();
+        public void onPictureTaken(final byte[] data, Camera camera) {
+            new Thread(
+                    new Runnable() {
+                        @Override
+                        public void run() {
+                            process(data);
+                        }
+                    }
+            ).start();
         }
     };
 
@@ -240,37 +248,23 @@ public class MainActivity extends AppCompatActivity {
 
         int[] facepos = ftdetector.getBBXPos(0);
         int[] tagpos = ftdetector.getBBXPos(1);
-//        mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
+        mResultFrm = ftdetector.drawFacesPos(mResultFrm, facepos);
         mResultFrm = ftdetector.drawTagsPos(mResultFrm, tagpos);
 
         Log.i(TAG, "faces coordinates: " + Arrays.toString(facepos));
         Log.i(TAG, "tags coordinates: " + Arrays.toString(tagpos));
 
-        int facenum = facepos.length / 4;
-        int[][] faceposArr = new int[facenum][4];
-        boolean[] faceprocArr = new boolean[facenum];
+        int facenum = facepos.length / 5;
+        faceposArr = new int[facenum][4];
+        faceprocArr = new boolean[facenum];
 
         for(int i=0; i < facenum; i++) {
-            faceposArr[i][0] = facepos[4*i];
-            faceposArr[i][1] = facepos[4*i+1];
-            faceposArr[i][2] = facepos[4*i+2];
-            faceposArr[i][3] = facepos[4*i+3];
+            faceposArr[i][0] = facepos[5*i];
+            faceposArr[i][1] = facepos[5*i+1];
+            faceposArr[i][2] = facepos[5*i+2];
+            faceposArr[i][3] = facepos[5*i+3];
 
-            faceprocArr[i] = true;
-        }
-
-        int tagnum = tagpos.length / 8;
-        int[][] tagposArr = new int[tagnum][8];
-
-        for(int i=0; i < tagnum; i++) {
-            tagposArr[i][0] = tagpos[8*i];
-            tagposArr[i][1] = tagpos[8*i+1];
-            tagposArr[i][2] = tagpos[8*i+2];
-            tagposArr[i][3] = tagpos[8*i+3];
-            tagposArr[i][4] = tagpos[8*i+4];
-            tagposArr[i][5] = tagpos[8*i+5];
-            tagposArr[i][6] = tagpos[8*i+6];
-            tagposArr[i][7] = tagpos[8*i+7];
+            faceprocArr[i] = facepos[5*i+4] > 0;
         }
 
         // faceposArr: int[facenum][4], facepos: int[facenum*4], faceprocArr: boolean[facenum]
@@ -280,92 +274,16 @@ public class MainActivity extends AppCompatActivity {
         //  assign value to faceprocArr, true means will blur it
 
         // waiting for hand results form socketTask
-        while (!isSocketTaskCompleted) {
-            Log.i(TAG, "waiting for asyncTask result");
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
+        //while (!isSocketTaskCompleted) {
+        //    Log.i(TAG, "waiting for asyncTask result");
+        //    try {
+        //        Thread.sleep(500);
+        //    } catch (InterruptedException e) {
+        //        e.printStackTrace();
+        //    }
+        //}
 
-        isSocketTaskCompleted = false; // wait for next result
-
-        // -- decision making start
-        // Case 1: gesture "no" --> blurring
-        // Case 2: gesture "yes" --> not blurring
-        // Case 3: tag alone --> blurring
-
-        // find nearest face for each yes or no gesture.
-        // in gestureUser, key is the face index, value is "yes" or "no".
-        // in tagUser, nearest face index is stored.
-        Map<Integer, String> gestureUser = new HashMap<>();
-        List<Integer> tagUser = new ArrayList<>();
-
-        int[][] faceCenters = new int[facenum][2];
-        for (int i = 0; i < facenum; i ++) {
-            faceCenters[i] = getCenter(faceposArr[i]);
-        }
-
-        int handnum = handposArr.length;
-        int[][] handCenters = new int[handnum][2];
-        for (int i = 0; i < handnum; i++) {
-            if (handtxtArr[i].contains("yes")) {
-                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters),  "yes");
-
-            } else if (handtxtArr[i].contains("no")) {
-                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters), "no");
-            }
-        }
-
-        // find nearest face for each tag
-        int[][] tagCenters = new int[tagnum][2];
-        for (int i = 0; i < tagnum; i++) {
-            tagUser.add(getNearest(getCenter(tagposArr[i]), faceCenters));
-        }
-
-        // processing for each face, defalut proArr is false.
-        // We put value no after yes, so if yes and no gesture find same nearest face, no will overwrite.
-        // create the map for detailed case situation
-        //Map<String, ArrayList<Integer>> results = new HashMap<>();
-        //List<Integer> case1 = new ArrayList<>();
-        //List<Integer> case2 = new ArrayList<>();
-        //List<Integer> case3 = new ArrayList<>();
-
-        for (int i = 0; i < facenum; i++) {
-            if (gestureUser.containsKey(i) && gestureUser.get(i).contains("yes")) {
-                    faceprocArr[i] = false;
-            } else {
-                if (!tagUser.contains(i)) { // no gesture or tag
-                    faceprocArr[i] = false;
-                }
-            }
-        }
-
-        // -- decision making end
-
-
-
-        mResultFrm = ftdetector.bbxProcess(mResultFrm, faceposArr, faceprocArr);
-        // TODO: Draw hand
-    }
-
-    private void display() {
-        mImageView.setVisibility(View.VISIBLE);
-        mFabBtnYes.setVisibility(View.VISIBLE);
-        mFabBtnNo.setVisibility(View.VISIBLE);
-
-        Bitmap bitmap = BitmapFactory.decodeByteArray(mResultFrm, 0, mResultFrm.length);
-
-        Matrix matrix = new Matrix();
-        matrix.postRotate(360 - 90 * orientCase);
-
-        if (front1back0 == 1) {
-            matrix.preScale(-1, 1);
-        }
-
-        bitmap = Bitmap.createBitmap(bitmap , 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
-        mImageView.setImageBitmap(bitmap);
+        //isSocketTaskCompleted = false; // wait for next result
     }
 
     private class socketTask extends AsyncTask<byte[], Void, Void> {
@@ -391,7 +309,7 @@ public class MainActivity extends AppCompatActivity {
             byte[] frmsize = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(frmSize).array();
             byte[] packetContent = new byte[4 + frmSize];
             System.arraycopy(frmsize, 0, packetContent, 0, 4);
-            System.arraycopy(data, 0, packetContent, 4, frmSize);
+            System.arraycopy(data[0], 0, packetContent, 4, frmSize);
 
             // send package content and then receive data
             try {
@@ -431,8 +349,7 @@ public class MainActivity extends AppCompatActivity {
                             int[] bbxpos = byteToInt(Arrays.copyOfRange(resData, i, i+16));
                             int bbxcls = byteToInt(Arrays.copyOfRange(resData, i+16, i+20))[0];
                             float scr = ByteBuffer.wrap(Arrays.copyOfRange(resData, i+20, i+24)).order(ByteOrder.LITTLE_ENDIAN).getFloat();
-//                            Log.i(TAG, "hand bbx: " + Arrays.toString(bbxpos) + ", class: "
-//                                    + bbxcls + ", score: " + scr);
+                            Log.i(TAG, "hand bbx: " + Arrays.toString(bbxpos) + ", class: " + bbxcls + ", score: " + scr);
 
                             bbxpos[0] = Math.max(bbxpos[0], 0);
                             bbxpos[1] = Math.max(bbxpos[1], 0);
@@ -440,10 +357,60 @@ public class MainActivity extends AppCompatActivity {
                             bbxpos[3] = Math.min(bbxpos[3], ymax);
 
                             handposArr[ibbx] = bbxpos;
-                            handtxtArr[ibbx] = (bbxcls == 2 ? "yes" : (bbxcls == 3 ? "no" : "normal")) + " " + scr;
+                            handtxtArr[ibbx] = (bbxcls == 2 ? "yes" : (bbxcls == 3 ? "no" : "others")) + " " + scr;
 
                             ibbx ++;
                         }
+
+                        mResultFrm = ftdetector.drawHandsPos(mResultFrm, handposArr, handtxtArr);
+
+                        // -- decision making start
+                        // Case 1: gesture "no" --> blurring
+                        // Case 2: gesture "yes" --> not blurring
+                        // Case 3: tag alone --> blurring
+
+                        // find nearest face for each yes or no gesture.
+                        // in gestureUser, key is the face index, value is "yes" or "no".
+                        Map<Integer, String> gestureUser = new HashMap<>();
+
+                        int facenum = faceposArr.length;
+                        int[][] faceCenters = new int[facenum][2];
+                        for (int i = 0; i < facenum; i ++) {
+                            faceCenters[i] = getCenter(faceposArr[i]);
+                        }
+
+                        int handnum = handposArr.length;
+                        for (int i = 0; i < handnum; i++) {
+                            if (handtxtArr[i].contains("yes")) {
+                                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters),  "yes");
+
+                            } else if (handtxtArr[i].contains("no")) {
+                                gestureUser.put(getNearest(getCenter(handposArr[i]), faceCenters), "no");
+                            }
+                        }
+
+                        Log.i(TAG, String.valueOf(gestureUser));
+
+                        // processing each face, proArr is true for face has tag, and false for others.
+                        // We put value no after yes, so if yes and no gesture find same nearest face, no will overwrite.
+                        // create the map for detailed case situation
+                        //Map<String, ArrayList<Integer>> results = new HashMap<>();
+                        //List<Integer> case1 = new ArrayList<>();
+                        //List<Integer> case2 = new ArrayList<>();
+                        //List<Integer> case3 = new ArrayList<>();
+
+                        for (int i = 0; i < facenum; i++) { // for those who use gestures
+                            if (gestureUser.containsKey(i) && gestureUser.get(i).contains("yes")) {
+                                faceprocArr[i] = false;
+                            } else if (gestureUser.containsKey(i) && gestureUser.get(i).contains("no")){
+                                faceprocArr[i] = true;
+                            }
+                        }
+
+                        // -- decision making end
+
+                        mResultFrm = ftdetector.bbxProcess(mResultFrm, faceposArr, faceprocArr);
+
 
                     } catch (IOException e) {
                         e.printStackTrace();
@@ -464,10 +431,33 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
 
-            isSocketTaskCompleted = true;
+            //isSocketTaskCompleted = true;
             return null;
         }
 
+        @Override
+        protected void onPostExecute(Void params) {
+            display();
+        }
+
+    }
+
+    private void display() {
+        mImageView.setVisibility(View.VISIBLE);
+        mFabBtnYes.setVisibility(View.VISIBLE);
+        mFabBtnNo.setVisibility(View.VISIBLE);
+
+        Bitmap bitmap = BitmapFactory.decodeByteArray(mResultFrm, 0, mResultFrm.length);
+
+        Matrix matrix = new Matrix();
+        matrix.postRotate(360 - 90 * orientCase);
+
+        if (front1back0 == 1) {
+            matrix.preScale(-1, 1);
+        }
+
+        bitmap = Bitmap.createBitmap(bitmap , 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+        mImageView.setImageBitmap(bitmap);
     }
 
     private SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
@@ -573,13 +563,40 @@ public class MainActivity extends AppCompatActivity {
     private int[] getCenter(int[] coordinates) {
         int[] center = new int[2];
 
+        if (coordinates.length == 4) {
+            center[0] = (coordinates[0] + coordinates[2]) / 2;
+            center[1] = (coordinates[1] + coordinates[3]) / 2;
+        } else {
+            Log.i(TAG, "coordinates do not have four elements");
+            System.exit(1);
+        }
+
         return center;
     }
 
     private int getNearest(int[] a, int[][] b) {
         int index = -1;
+        double distance = 100000;
+        double tmp;
+
+        for (int i = 0; i < b.length; i ++) {
+            tmp = Math.sqrt(Math.pow(b[i][0] - a[0], 2) + Math.pow(b[i][1] - a[1], 2));
+            if (tmp < distance) {
+                distance = tmp;
+                index = i;
+            }
+        }
 
         return index;
+    }
+
+    private double l2Norm(int[] a) {
+        double result = 0.0f;
+        for (int i = 0; i < a.length; i++) {
+            result += Math.pow(a[i], 2.0);
+        }
+
+        return Math.sqrt(result);
     }
 
     @Override
