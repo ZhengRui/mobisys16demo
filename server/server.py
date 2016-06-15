@@ -37,7 +37,7 @@ class RequestHandler(SS.BaseRequestHandler):
         # TODO: receive data size and unpack according to it
         # | header (size_frm) | frm_data |
         headerBytes = self.request.recv(4)
-        size = struct.unpack('1i', headerBytes)
+        size = struct.unpack('1i', headerBytes)[0]
         print size
 
         self.res={'hand_res':None, 'hand_res_evt':Event()}
@@ -63,49 +63,6 @@ class RequestHandler(SS.BaseRequestHandler):
         self.res['hand_res_evt'].wait()
             
         print "hand result : ", self.res['hand_res'][:, -2:]
-
-
-#        # Case 1: gesture "no" --> blurring
-#        # Case 2: gesture "yes" --> not blurring 
-#        # Case 3: tag alone --> blurring
-#    
-#        # find nearest face for each yes or no gesture
-#        gesture_user = {2:[], 3:[]}
-#        tag_user = []
-#
-#        face_centers = np.zeros((len(face_num), 2))
-#        for i in range(len(face_num)):
-#            center = face_bbx[i].center()
-#            face_centers[i, :] = [center.x, center.y]
-#
-#        for (x0, y0, x1, y1, score, hand_cls) in self.res['hand_res']:
-#            if hand_cls != 1: # not for natural hand
-#                hand_center = np.array([(x0 + x1) / 2, (y0 + y1) / 2])
-#                dis_centers = np.linalg.norm(face_centers-hand_center, ord=2, axis=1)
-#                gesture_user[hand_cls].append(np.argmin(dis_centers))
-#
-#        # find nearest face for each tag
-#        tag_centers = np.zeros((len(tag_num), 2))
-#        for i in range(len(tag_num)):
-#            tag_center = tag_bbx[i].center()
-#            dis_centers = np.linalg.norm(face_centers-tag_center, ord=2, axis=1)
-#            tag_user.append(np.argmin(dis_centers))            
-#
-#        for i in range(len(face_num)):
-#            # 'no' gesture is used
-#            if i in gesture_user[3]:
-#                print "Case 1: gesture 'no' --> blurring"
-#                self.res['c1'].append(i)
-#
-#            # 'no' gesture is used
-#            elif i in gesture_user[2]:
-#                print "Case 2: gesture 'yes' --> not blurring"
-#                self.res['c2'].append(i)
-#
-#            # no hand gesture is detected
-#            elif i in tag_user:
-#                print "Case 3: tag alone --> blurring"
-#                self.res['c3'].append(i)
 
         # send message back to the client
         # header (hand_size) | hand_data
