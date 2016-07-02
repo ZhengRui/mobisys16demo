@@ -18,8 +18,6 @@ cmake -DCMAKE_TOOLCHAIN_FILE=${ACMAKEFD}/android.toolchain.cmake \
 
 make VERBOSE=1
 
-cp libfacetagdet.so ${HOME}/Work/Projects/AndroidProjects/visionapps/mobisys16demo/src/main/jniLibs/armeabi-v7a/
-cp cv2nonfree/libopencv2Nonfree.so ${HOME}/Work/Projects/AndroidProjects/visionapps/mobisys16demo/src/main/jniLibs/armeabi-v7a/
-
-
+cp libfacetagdet.so ../../mobisys16demo/src/main/jniLibs/armeabi-v7a/
+cp cv2nonfree/libopencv2Nonfree.so ../../mobisys16demo/src/main/jniLibs/armeabi-v7a/
 
