@@ -16,8 +16,6 @@ import cv2
 import sys
 import os
 import time
-import caffe
-
 
 class RequestHandler(SS.BaseRequestHandler):
 
@@ -94,7 +92,6 @@ def modelPrepare(model_class_name, params, tsk_queues):
        #  "syncedmem.cpp: error == cudaSuccess (3 vs. 0)"
     #  or
        #  "math_functions.cu:28: CUBLAS_STATUS_SUCCESS (14 vs. 0) CUBLAS_STATUS_INTERNAL_ERROR"
-    caffe.set_mode_cpu()
     modelClass = getattr(sys.modules[__name__], model_class_name)
     model = modelClass(*params)
     model.serv(*tsk_queues)
@@ -128,18 +125,16 @@ def fillString(s, l):
 
 if __name__ == "__main__":
 
-    import wingdbstub
-    if 'WINGDB_ACTIVE' in os.environ:
-        print "Success starting debug"
-    else:
-        print "Failed to start debug... Continuing without debug"
-
+    #  import wingdbstub
+    #  if 'WINGDB_ACTIVE' in os.environ:
+        #  print "Success starting debug"
+    #  else:
+        #  print "Failed to start debug... Continuing without debug"
 
     # input_q & res_q are JoinableQueue with put() and get(): put() in handle(), task_done() in gestureModel, get() in resMailMan().
     # Event() is for communication among process/thread: wait() in handle() to wait, set() in resMailMan.
     # worker_hand is a Process calls modelPrepare() for gesture detection.
     # worker_handres_mailman is a DummyProcess calls resMainMan() for results informing.
-    
 
     skt_clients_map = {}
 
@@ -147,8 +142,8 @@ if __name__ == "__main__":
     hand_res_q = JoinableQueue()
 
     worker_hand_p1 = Process(target = modelPrepare, args = ('gestDetModel',
-    ("/Users/Jiayu/Documents/Model/VGG_HAND/test.prototxt",
-     "/Users/Jiayu/Documents/Model/VGG_HAND/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel",
+    ("/Users/zerry/Work/GitRepos/ContextPrivacy/modelzoo/hand/test.prototxt",
+     "/Users/zerry/Work/GitRepos/ContextPrivacy/modelzoo/hand/vgg16_faster_rcnn_handGesdet_aug_fulldata_iter_50000.caffemodel",
      0.4, 0.8, ('natural', 'yes', 'no')), (hand_inp_q, hand_res_q)))
 
     # worker_hand_p2 = Process(target = modelPrepare, args = ('gestDetModel',

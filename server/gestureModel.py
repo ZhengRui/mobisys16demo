@@ -1,10 +1,17 @@
-import _init_paths
-from fast_rcnn.test import *
 import time
 import Queue
+import numpy as np
+import _init_paths
+from fast_rcnn.config import cfg
+from fast_rcnn.bbox_transform import clip_boxes, bbox_transform_inv
+from utils.blob import im_list_to_blob
+import cv2
+from fast_rcnn.nms_wrapper import nms
 
 class gestDetModel:
     def __init__(self, proto, mdl, thresh_nms, thresh_conf, classes):
+        import caffe
+        caffe.set_mode_cpu()
         self.net = caffe.Net(proto, mdl, caffe.TEST)
         self.NMS_THRESH = thresh_nms
         self.CONF_THRESH = thresh_conf
